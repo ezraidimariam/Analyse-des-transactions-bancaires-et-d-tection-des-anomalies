@@ -71,6 +71,118 @@ src/main/java/ma/albaraka/
 └── util/      Connexion à la base et validations
 ```
 
+## Class diagram
+
+```mermaid
+classDiagram
+	direction LR
+
+	class Client {
+		<<record>>
+		+Long id
+		+String nom
+		+String email
+	}
+
+	class Compte {
+		<<sealed interface>>
+		+Long id()
+		+String numero()
+		+BigDecimal solde()
+		+Long idClient()
+	}
+
+	class CompteCourant {
+		<<record>>
+		+BigDecimal decouvertAutorise
+	}
+
+	class CompteEpargne {
+		<<record>>
+		+BigDecimal tauxInteret
+	}
+
+	class Transaction {
+		<<record>>
+		+Long id
+		+LocalDateTime date
+		+BigDecimal montant
+		+TypeTransaction type
+		+String lieu
+		+Long idCompte
+	}
+
+	class TypeTransaction {
+		<<enumeration>>
+		VERSEMENT
+		RETRAIT
+		VIREMENT
+	}
+
+	class ClientDAO {
+		<<interface>>
+		+save(Client) Client
+		+update(Client) Client
+		+delete(Long) void
+		+findById(Long) Optional~Client~
+		+findByNom(String) List~Client~
+		+findAll() List~Client~
+	}
+
+	class CompteDAO {
+		<<interface>>
+		+save(Compte) Compte
+		+updateSolde(Long, BigDecimal) void
+		+findByClient(Long) List~Compte~
+		+findByNumero(String) Optional~Compte~
+		+findMaximum() Optional~Compte~
+		+findMinimum() Optional~Compte~
+		+findInactive(int) List~Compte~
+	}
+
+	class TransactionDAO {
+		<<interface>>
+		+save(Transaction) Transaction
+		+findByCompte(Long) List~Transaction~
+		+findByClient(Long) List~Transaction~
+		+findBetween(LocalDateTime, LocalDateTime) List~Transaction~
+		+findAll() List~Transaction~
+	}
+
+	class JdbcClientDAO {
+		<<JDBC implementation>>
+	}
+
+	class JdbcCompteDAO {
+		<<JDBC implementation>>
+	}
+
+	class Database {
+		<<utility>>
+		+getConnection() Connection
+	}
+
+	class Validation {
+		<<utility>>
+		+required(String, String) String
+		+positive(BigDecimal, String) BigDecimal
+	}
+
+	Compte <|.. CompteCourant
+	Compte <|.. CompteEpargne
+	ClientDAO <|.. JdbcClientDAO
+	CompteDAO <|.. JdbcCompteDAO
+
+	Client "1" --> "0..*" Compte : idClient
+	Compte "1" --> "0..*" Transaction : idCompte
+	Transaction --> TypeTransaction
+
+	JdbcClientDAO ..> Client
+	JdbcCompteDAO ..> Compte
+	JdbcClientDAO ..> Database
+	JdbcCompteDAO ..> Database
+```
+
 ## Dépendances principales
 
 - PostgreSQL JDBC `42.7.12`
