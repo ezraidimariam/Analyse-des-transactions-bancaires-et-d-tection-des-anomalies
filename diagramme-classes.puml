@@ -1,0 +1,217 @@
+@startuml
+title Al Baraka - Classes de l'application
+skinparam classAttributeIconSize 0
+
+package entity {
+  class Client <<record>> {
+    Long id
+    String nom
+    String email
+  }
+  abstract class Compte <<sealed>> {
+    - Long id
+    - String numero
+    - BigDecimal solde
+    - Long idClient
+    + getId()
+    + getNumero()
+    + getSolde()
+    + getIdClient()
+  }
+  class CompteCourant <<final>> {
+    - BigDecimal decouvertAutorise
+    + getDecouvertAutorise()
+  }
+  class CompteEpargne <<final>> {
+    - BigDecimal tauxInteret
+    + getTauxInteret()
+  }
+  class Transaction <<record>> {
+    Long id
+    LocalDateTime date
+    BigDecimal montant
+    TypeTransaction type
+    String lieu
+    Long idCompte
+  }
+  enum TypeTransaction {
+    VERSEMENT
+    RETRAIT
+    VIREMENT
+  }
+}
+
+package dao {
+  class ClientDAO {
+    + ajouter()
+    + modifier()
+    + supprimer()
+    + rechercherParId()
+    + rechercherParNom()
+    + findAll()
+  }
+  class CompteDAO {
+    + ajouter()
+    + modifier()
+    + mettreAJourSolde()
+    + supprimer()
+    + rechercherParId()
+    + rechercherParNumero()
+    + rechercherParClient()
+    + verrouiller()
+    + findAll()
+  }
+  class TransactionDAO {
+    + ajouter()
+    + modifier()
+    + supprimer()
+    + rechercherParId()
+    + rechercherParCompte()
+    + findAll()
+  }
+}
+
+package service {
+  class ClientService {
+    + ajouter()
+    + modifier()
+    + supprimer()
+    + rechercherParId()
+    + rechercherParNom()
+    + lister()
+    + nombreComptes()
+    + soldeTotal()
+  }
+  class CompteService {
+    + creerCourant()
+    + creerEpargne()
+    + modifier()
+    + mettreAJourSolde()
+    + modifierDecouvert()
+    + modifierTaux()
+    + verifierSolde()
+    + rechercherParId()
+    + rechercherParNumero()
+    + rechercherParClient()
+    + lister()
+    + maximum()
+    + minimum()
+    + supprimer()
+  }
+  class TransactionService {
+    + SEUIL_MONTANT
+    + MAX_OPERATIONS_PAR_MINUTE
+    + versement()
+    + retrait()
+    + virement()
+    + parCompte()
+    + parClient()
+    + lister()
+    + trierParDate()
+    + filtrer()
+    + regrouperParType()
+    + regrouperParMois()
+    + total()
+    + moyenne()
+    + totalCompte()
+    + totalClient()
+    + suspectes()
+  }
+  class RapportService {
+    + top5()
+    + nombreParType()
+    + volumeTotal()
+    + rapportMensuel()
+    + transactionsSuspectes()
+    + comptesInactifs()
+    + soldesBas()
+  }
+}
+
+package util {
+  class DatabaseConnection {
+    - URL
+    - USER
+    - PASSWORD
+    + {static} getConnection()
+  }
+  class Validation {
+    + {static} texte()
+    + {static} montant()
+    + {static} positif()
+    + {static} nonNegatif()
+    + {static} id()
+  }
+  class Formatage {
+    + {static} montant()
+    + {static} date()
+  }
+}
+
+package ui {
+  class Main {
+    + {static} main()
+    + demarrer()
+  }
+}
+
+Compte <|-- CompteCourant
+Compte <|-- CompteEpargne
+Client "1" -- "0..*" Compte : idClient
+Compte "1" -- "0..*" Transaction : idCompte
+Transaction --> TypeTransaction
+
+Main ..> ClientService
+Main ..> CompteService
+Main ..> TransactionService
+Main ..> RapportService
+Main ..> DatabaseConnection
+Main ..> Validation
+Main ..> Formatage
+Main ..> Client
+Main ..> Compte
+Main ..> Transaction
+Main ..> TypeTransaction
+
+ClientService --> ClientDAO
+ClientService --> CompteDAO
+ClientService ..> Validation
+ClientService ..> Client
+ClientService ..> Compte
+CompteService --> CompteDAO
+CompteService --> ClientDAO
+CompteService ..> DatabaseConnection
+CompteService ..> Validation
+CompteService ..> Compte
+CompteService ..> CompteCourant
+CompteService ..> CompteEpargne
+TransactionService --> CompteDAO
+TransactionService --> TransactionDAO
+TransactionService ..> ClientDAO
+TransactionService ..> CompteService
+TransactionService ..> DatabaseConnection
+TransactionService ..> Validation
+TransactionService ..> Compte
+TransactionService ..> Transaction
+TransactionService ..> TypeTransaction
+RapportService --> ClientDAO
+RapportService --> CompteDAO
+RapportService --> TransactionDAO
+RapportService --> TransactionService
+RapportService ..> Validation
+RapportService ..> Client
+RapportService ..> Compte
+RapportService ..> Transaction
+RapportService ..> TypeTransaction
+
+ClientDAO ..> DatabaseConnection
+CompteDAO ..> DatabaseConnection
+TransactionDAO ..> DatabaseConnection
+ClientDAO ..> Client
+CompteDAO ..> Compte
+CompteDAO ..> CompteCourant
+CompteDAO ..> CompteEpargne
+TransactionDAO ..> Transaction
+TransactionDAO ..> TypeTransaction
+@enduml
+
