@@ -15,14 +15,24 @@ public abstract sealed class Compte permits CompteCourant, CompteEpargne {
         this.idClient = idClient;
     }
 
-    public Long getId() { return id; }
-    public String getNumero() { return numero; }
-    public BigDecimal getSolde() { return solde; }
-    public Long getIdClient() { return idClient; }
+    public Long getId() {
+        return id;
+    }
+
+    public String getNumero() {
+        return numero;
+    }
+
+    public BigDecimal getSolde() {
+        return solde;
+    }
+
+    public Long getIdClient() {
+        return idClient;
+    }
 
     @Override
     public String toString() {
         return "ID=" + id + " | numero=" + numero + " | solde=" + solde + " | client=" + idClient;
     }
 }
-

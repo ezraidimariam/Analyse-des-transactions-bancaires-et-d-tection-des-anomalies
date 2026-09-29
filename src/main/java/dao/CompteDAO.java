@@ -2,6 +2,7 @@ package dao;
 
 import entity.*;
 import util.DatabaseConnection;
+
 import java.math.BigDecimal;
 import java.sql.*;
 import java.util.ArrayList;
@@ -14,11 +15,14 @@ public class CompteDAO {
                 INSERT INTO compte(numero, solde, id_client, type_compte, decouvert_autorise, taux_interet)
                 VALUES (?, ?, ?, ?, ?, ?) RETURNING *
                 """;
+
         try (Connection connection = DatabaseConnection.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
             remplir(statement, compte);
+
             try (ResultSet resultat = statement.executeQuery()) {
                 resultat.next();
+
                 return lire(resultat);
             }
         }
@@ -29,9 +33,11 @@ public class CompteDAO {
                 UPDATE compte SET numero=?, solde=?, id_client=?, type_compte=?,
                 decouvert_autorise=?, taux_interet=? WHERE id=?
                 """;
+
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             remplir(statement, compte);
             statement.setLong(7, compte.getId());
+
             if (statement.executeUpdate() == 0) {
                 throw new IllegalArgumentException("Compte introuvable.");
             }
@@ -44,10 +50,13 @@ public class CompteDAO {
         }
     }
 
-    public void mettreAJourSolde(Connection connection, long id, BigDecimal solde) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("UPDATE compte SET solde=? WHERE id=?")) {
+    public void mettreAJourSolde(Connection connection, long id, BigDecimal solde)
+            throws SQLException {
+        try (PreparedStatement statement = connection
+                .prepareStatement("UPDATE compte SET solde=? WHERE id=?")) {
             statement.setBigDecimal(1, solde);
             statement.setLong(2, id);
+
             if (statement.executeUpdate() == 0) {
                 throw new IllegalArgumentException("Compte introuvable.");
             }
@@ -56,8 +65,10 @@ public class CompteDAO {
 
     public void supprimer(long id) throws SQLException {
         try (Connection connection = DatabaseConnection.getConnection();
-             PreparedStatement statement = connection.prepareStatement("DELETE FROM compte WHERE id=?")) {
+                PreparedStatement statement = connection
+                        .prepareStatement("DELETE FROM compte WHERE id=?")) {
             statement.setLong(1, id);
+
             if (statement.executeUpdate() == 0) {
                 throw new IllegalArgumentException("Compte introuvable.");
             }
@@ -66,8 +77,10 @@ public class CompteDAO {
 
     public Optional<Compte> rechercherParId(long id) throws SQLException {
         try (Connection connection = DatabaseConnection.getConnection();
-             PreparedStatement statement = connection.prepareStatement("SELECT * FROM compte WHERE id=?")) {
+                PreparedStatement statement = connection
+                        .prepareStatement("SELECT * FROM compte WHERE id=?")) {
             statement.setLong(1, id);
+
             try (ResultSet resultat = statement.executeQuery()) {
                 return resultat.next() ? Optional.of(lire(resultat)) : Optional.empty();
             }
@@ -76,10 +89,15 @@ public class CompteDAO {
 
     // Le verrou reste actif jusqu'au commit ou rollback de la connexion.
     public Compte verrouiller(Connection connection, long id) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("SELECT * FROM compte WHERE id=? FOR UPDATE")) {
+        try (PreparedStatement statement = connection
+                .prepareStatement("SELECT * FROM compte WHERE id=? FOR UPDATE")) {
             statement.setLong(1, id);
+
             try (ResultSet resultat = statement.executeQuery()) {
-                if (!resultat.next()) { throw new IllegalArgumentException("Compte introuvable."); }
+                if (!resultat.next()) {
+                    throw new IllegalArgumentException("Compte introuvable.");
+                }
+
                 return lire(resultat);
             }
         }
@@ -87,8 +105,10 @@ public class CompteDAO {
 
     public Optional<Compte> rechercherParNumero(String numero) throws SQLException {
         try (Connection connection = DatabaseConnection.getConnection();
-             PreparedStatement statement = connection.prepareStatement("SELECT * FROM compte WHERE numero=?")) {
+                PreparedStatement statement = connection
+                        .prepareStatement("SELECT * FROM compte WHERE numero=?")) {
             statement.setString(1, numero);
+
             try (ResultSet resultat = statement.executeQuery()) {
                 return resultat.next() ? Optional.of(lire(resultat)) : Optional.empty();
             }
@@ -97,23 +117,34 @@ public class CompteDAO {
 
     public List<Compte> rechercherParClient(long idClient) throws SQLException {
         List<Compte> comptes = new ArrayList<>();
+
         try (Connection connection = DatabaseConnection.getConnection();
-             PreparedStatement statement = connection.prepareStatement("SELECT * FROM compte WHERE id_client=? ORDER BY id")) {
+                PreparedStatement statement = connection
+                        .prepareStatement("SELECT * FROM compte WHERE id_client=? ORDER BY id")) {
             statement.setLong(1, idClient);
+
             try (ResultSet resultat = statement.executeQuery()) {
-                while (resultat.next()) { comptes.add(lire(resultat)); }
+                while (resultat.next()) {
+                    comptes.add(lire(resultat));
+                }
             }
         }
+
         return comptes;
     }
 
     public List<Compte> findAll() throws SQLException {
         List<Compte> comptes = new ArrayList<>();
+
         try (Connection connection = DatabaseConnection.getConnection();
-             PreparedStatement statement = connection.prepareStatement("SELECT * FROM compte ORDER BY id");
-             ResultSet resultat = statement.executeQuery()) {
-            while (resultat.next()) { comptes.add(lire(resultat)); }
+                PreparedStatement statement = connection
+                        .prepareStatement("SELECT * FROM compte ORDER BY id");
+                ResultSet resultat = statement.executeQuery()) {
+            while (resultat.next()) {
+                comptes.add(lire(resultat));
+            }
         }
+
         return comptes;
     }
 
@@ -121,6 +152,7 @@ public class CompteDAO {
         statement.setString(1, compte.getNumero());
         statement.setBigDecimal(2, compte.getSolde());
         statement.setLong(3, compte.getIdClient());
+
         if (compte instanceof CompteCourant courant) {
             statement.setString(4, "COURANT");
             statement.setBigDecimal(5, courant.getDecouvertAutorise());
@@ -138,10 +170,12 @@ public class CompteDAO {
         String numero = resultat.getString("numero");
         BigDecimal solde = resultat.getBigDecimal("solde");
         long client = resultat.getLong("id_client");
+
         if (resultat.getString("type_compte").equals("COURANT")) {
-            return new CompteCourant(id, numero, solde, client, resultat.getBigDecimal("decouvert_autorise"));
+            return new CompteCourant(id, numero, solde, client,
+                    resultat.getBigDecimal("decouvert_autorise"));
         }
+
         return new CompteEpargne(id, numero, solde, client, resultat.getBigDecimal("taux_interet"));
     }
 }
-

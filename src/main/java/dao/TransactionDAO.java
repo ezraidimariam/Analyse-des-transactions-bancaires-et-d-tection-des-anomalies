@@ -3,6 +3,7 @@ package dao;
 import entity.Transaction;
 import entity.TypeTransaction;
 import util.DatabaseConnection;
+
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -18,11 +19,15 @@ public class TransactionDAO {
     // Cette surcharge partage la transaction SQL avec la mise a jour des soldes.
     public Transaction ajouter(Connection connection, Transaction transaction) throws SQLException {
         String sql = "INSERT INTO transaction_bancaire(date, montant, type, lieu, id_compte) VALUES (?, ?, ?, ?, ?) RETURNING id";
+
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             remplir(statement, transaction);
+
             try (ResultSet resultat = statement.executeQuery()) {
                 resultat.next();
-                return new Transaction(resultat.getLong("id"), transaction.date(), transaction.montant(),
+
+                return new Transaction(resultat.getLong("id"), transaction.date(),
+                        transaction.montant(),
                         transaction.type(), transaction.lieu(), transaction.idCompte());
             }
         }
@@ -30,10 +35,12 @@ public class TransactionDAO {
 
     public void modifier(Transaction transaction) throws SQLException {
         String sql = "UPDATE transaction_bancaire SET date=?, montant=?, type=?, lieu=?, id_compte=? WHERE id=?";
+
         try (Connection connection = DatabaseConnection.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
             remplir(statement, transaction);
             statement.setLong(6, transaction.id());
+
             if (statement.executeUpdate() == 0) {
                 throw new IllegalArgumentException("Transaction introuvable.");
             }
@@ -42,8 +49,10 @@ public class TransactionDAO {
 
     public void supprimer(long id) throws SQLException {
         try (Connection connection = DatabaseConnection.getConnection();
-             PreparedStatement statement = connection.prepareStatement("DELETE FROM transaction_bancaire WHERE id=?")) {
+                PreparedStatement statement = connection
+                        .prepareStatement("DELETE FROM transaction_bancaire WHERE id=?")) {
             statement.setLong(1, id);
+
             if (statement.executeUpdate() == 0) {
                 throw new IllegalArgumentException("Transaction introuvable.");
             }
@@ -52,8 +61,10 @@ public class TransactionDAO {
 
     public Optional<Transaction> rechercherParId(long id) throws SQLException {
         try (Connection connection = DatabaseConnection.getConnection();
-             PreparedStatement statement = connection.prepareStatement("SELECT * FROM transaction_bancaire WHERE id=?")) {
+                PreparedStatement statement = connection
+                        .prepareStatement("SELECT * FROM transaction_bancaire WHERE id=?")) {
             statement.setLong(1, id);
+
             try (ResultSet resultat = statement.executeQuery()) {
                 return resultat.next() ? Optional.of(lire(resultat)) : Optional.empty();
             }
@@ -62,24 +73,34 @@ public class TransactionDAO {
 
     public List<Transaction> rechercherParCompte(long idCompte) throws SQLException {
         List<Transaction> transactions = new ArrayList<>();
+
         try (Connection connection = DatabaseConnection.getConnection();
-             PreparedStatement statement = connection.prepareStatement(
-                     "SELECT * FROM transaction_bancaire WHERE id_compte=? ORDER BY date, id")) {
+                PreparedStatement statement = connection.prepareStatement(
+                        "SELECT * FROM transaction_bancaire WHERE id_compte=? ORDER BY date, id")) {
             statement.setLong(1, idCompte);
+
             try (ResultSet resultat = statement.executeQuery()) {
-                while (resultat.next()) { transactions.add(lire(resultat)); }
+                while (resultat.next()) {
+                    transactions.add(lire(resultat));
+                }
             }
         }
+
         return transactions;
     }
 
     public List<Transaction> findAll() throws SQLException {
         List<Transaction> transactions = new ArrayList<>();
+
         try (Connection connection = DatabaseConnection.getConnection();
-             PreparedStatement statement = connection.prepareStatement("SELECT * FROM transaction_bancaire ORDER BY date, id");
-             ResultSet resultat = statement.executeQuery()) {
-            while (resultat.next()) { transactions.add(lire(resultat)); }
+                PreparedStatement statement = connection
+                        .prepareStatement("SELECT * FROM transaction_bancaire ORDER BY date, id");
+                ResultSet resultat = statement.executeQuery()) {
+            while (resultat.next()) {
+                transactions.add(lire(resultat));
+            }
         }
+
         return transactions;
     }
 
@@ -92,9 +113,10 @@ public class TransactionDAO {
     }
 
     private Transaction lire(ResultSet resultat) throws SQLException {
-        return new Transaction(resultat.getLong("id"), resultat.getTimestamp("date").toLocalDateTime(),
-                resultat.getBigDecimal("montant"), TypeTransaction.valueOf(resultat.getString("type")),
+        return new Transaction(resultat.getLong("id"),
+                resultat.getTimestamp("date").toLocalDateTime(),
+                resultat.getBigDecimal("montant"),
+                TypeTransaction.valueOf(resultat.getString("type")),
                 resultat.getString("lieu"), resultat.getLong("id_compte"));
     }
 }
-

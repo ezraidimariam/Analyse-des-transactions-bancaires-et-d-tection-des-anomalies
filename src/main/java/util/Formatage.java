@@ -13,4 +13,3 @@ public class Formatage {
         return valeur.format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"));
     }
 }
-

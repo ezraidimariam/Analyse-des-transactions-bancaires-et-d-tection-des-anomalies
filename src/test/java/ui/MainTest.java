@@ -18,6 +18,7 @@ class MainTest {
             System.setIn(entree);
             System.setOut(sortie);
         }
+
         return capture.toString(StandardCharsets.UTF_8);
     }
 
@@ -40,4 +41,3 @@ class MainTest {
         assertTrue(executer("1\n").contains("Fin de saisie."));
     }
 }
-
