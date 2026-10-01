@@ -1,6 +1,8 @@
 package dao;
 
-import entity.*;
+import entity.Compte;
+import entity.CompteCourant;
+import entity.CompteEpargne;
 import util.DatabaseConnection;
 
 import java.math.BigDecimal;
@@ -13,29 +15,59 @@ public class CompteDAO {
     public Compte ajouter(Compte compte) throws SQLException {
         String sql = """
                 INSERT INTO compte(numero, solde, id_client, type_compte, decouvert_autorise, taux_interet)
-                VALUES (?, ?, ?, ?, ?, ?) RETURNING *
+                VALUES (?, ?, ?, ?, ?, ?)
+                RETURNING *
                 """;
 
         try (Connection connection = DatabaseConnection.getConnection();
                 PreparedStatement statement = connection.prepareStatement(sql)) {
-            remplir(statement, compte);
+            statement.setString(1, compte.getNumero());
+            statement.setBigDecimal(2, compte.getSolde());
+            statement.setLong(3, compte.getIdClient());
+
+            if (compte instanceof CompteCourant courant) {
+                statement.setString(4, "COURANT");
+                statement.setBigDecimal(5, courant.getDecouvertAutorise());
+                statement.setNull(6, Types.NUMERIC);
+            } else {
+                CompteEpargne epargne = (CompteEpargne) compte;
+                statement.setString(4, "EPARGNE");
+                statement.setNull(5, Types.NUMERIC);
+                statement.setBigDecimal(6, epargne.getTauxInteret());
+            }
 
             try (ResultSet resultat = statement.executeQuery()) {
-                resultat.next();
-
-                return lire(resultat);
+                if (resultat.next()) {
+                    return lire(resultat);
+                }
             }
         }
+        throw new SQLException("Impossible de creer le compte.");
     }
 
     public void modifier(Connection connection, Compte compte) throws SQLException {
         String sql = """
-                UPDATE compte SET numero=?, solde=?, id_client=?, type_compte=?,
-                decouvert_autorise=?, taux_interet=? WHERE id=?
+                UPDATE compte
+                SET numero=?, solde=?, id_client=?, type_compte=?,
+                    decouvert_autorise=?, taux_interet=?
+                WHERE id=?
                 """;
 
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
-            remplir(statement, compte);
+            statement.setString(1, compte.getNumero());
+            statement.setBigDecimal(2, compte.getSolde());
+            statement.setLong(3, compte.getIdClient());
+
+            if (compte instanceof CompteCourant courant) {
+                statement.setString(4, "COURANT");
+                statement.setBigDecimal(5, courant.getDecouvertAutorise());
+                statement.setNull(6, Types.NUMERIC);
+            } else {
+                CompteEpargne epargne = (CompteEpargne) compte;
+                statement.setString(4, "EPARGNE");
+                statement.setNull(5, Types.NUMERIC);
+                statement.setBigDecimal(6, epargne.getTauxInteret());
+            }
             statement.setLong(7, compte.getId());
 
             if (statement.executeUpdate() == 0) {
@@ -52,8 +84,13 @@ public class CompteDAO {
 
     public void mettreAJourSolde(Connection connection, long id, BigDecimal solde)
             throws SQLException {
-        try (PreparedStatement statement = connection
-                .prepareStatement("UPDATE compte SET solde=? WHERE id=?")) {
+        String sql = """
+                UPDATE compte
+                SET solde=?
+                WHERE id=?
+                """;
+
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setBigDecimal(1, solde);
             statement.setLong(2, id);
 
@@ -64,9 +101,13 @@ public class CompteDAO {
     }
 
     public void supprimer(long id) throws SQLException {
+        String sql = """
+                DELETE FROM compte
+                WHERE id=?
+                """;
+
         try (Connection connection = DatabaseConnection.getConnection();
-                PreparedStatement statement = connection
-                        .prepareStatement("DELETE FROM compte WHERE id=?")) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, id);
 
             if (statement.executeUpdate() == 0) {
@@ -76,21 +117,34 @@ public class CompteDAO {
     }
 
     public Optional<Compte> rechercherParId(long id) throws SQLException {
+        String sql = """
+                SELECT *
+                FROM compte
+                WHERE id=?
+                """;
+
         try (Connection connection = DatabaseConnection.getConnection();
-                PreparedStatement statement = connection
-                        .prepareStatement("SELECT * FROM compte WHERE id=?")) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, id);
 
             try (ResultSet resultat = statement.executeQuery()) {
-                return resultat.next() ? Optional.of(lire(resultat)) : Optional.empty();
+                if (resultat.next()) {
+                    return Optional.of(lire(resultat));
+                }
+                return Optional.empty();
             }
         }
     }
 
     // Le verrou reste actif jusqu'au commit ou rollback de la connexion.
     public Compte verrouiller(Connection connection, long id) throws SQLException {
-        try (PreparedStatement statement = connection
-                .prepareStatement("SELECT * FROM compte WHERE id=? FOR UPDATE")) {
+        String sql = """
+                SELECT *
+                FROM compte
+                WHERE id=? FOR UPDATE
+                """;
+
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, id);
 
             try (ResultSet resultat = statement.executeQuery()) {
@@ -104,23 +158,37 @@ public class CompteDAO {
     }
 
     public Optional<Compte> rechercherParNumero(String numero) throws SQLException {
+        String sql = """
+                SELECT *
+                FROM compte
+                WHERE numero=?
+                """;
+
         try (Connection connection = DatabaseConnection.getConnection();
-                PreparedStatement statement = connection
-                        .prepareStatement("SELECT * FROM compte WHERE numero=?")) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, numero);
 
             try (ResultSet resultat = statement.executeQuery()) {
-                return resultat.next() ? Optional.of(lire(resultat)) : Optional.empty();
+                if (resultat.next()) {
+                    return Optional.of(lire(resultat));
+                }
+                return Optional.empty();
             }
         }
     }
 
     public List<Compte> rechercherParClient(long idClient) throws SQLException {
+        String sql = """
+                SELECT *
+                FROM compte
+                WHERE id_client=?
+                ORDER BY id
+                """;
+
         List<Compte> comptes = new ArrayList<>();
 
         try (Connection connection = DatabaseConnection.getConnection();
-                PreparedStatement statement = connection
-                        .prepareStatement("SELECT * FROM compte WHERE id_client=? ORDER BY id")) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, idClient);
 
             try (ResultSet resultat = statement.executeQuery()) {
@@ -134,11 +202,16 @@ public class CompteDAO {
     }
 
     public List<Compte> findAll() throws SQLException {
+        String sql = """
+                SELECT *
+                FROM compte
+                ORDER BY id
+                """;
+
         List<Compte> comptes = new ArrayList<>();
 
         try (Connection connection = DatabaseConnection.getConnection();
-                PreparedStatement statement = connection
-                        .prepareStatement("SELECT * FROM compte ORDER BY id");
+                PreparedStatement statement = connection.prepareStatement(sql);
                 ResultSet resultat = statement.executeQuery()) {
             while (resultat.next()) {
                 comptes.add(lire(resultat));
@@ -146,23 +219,6 @@ public class CompteDAO {
         }
 
         return comptes;
-    }
-
-    private void remplir(PreparedStatement statement, Compte compte) throws SQLException {
-        statement.setString(1, compte.getNumero());
-        statement.setBigDecimal(2, compte.getSolde());
-        statement.setLong(3, compte.getIdClient());
-
-        if (compte instanceof CompteCourant courant) {
-            statement.setString(4, "COURANT");
-            statement.setBigDecimal(5, courant.getDecouvertAutorise());
-            statement.setNull(6, Types.NUMERIC);
-        } else {
-            CompteEpargne epargne = (CompteEpargne) compte;
-            statement.setString(4, "EPARGNE");
-            statement.setNull(5, Types.NUMERIC);
-            statement.setBigDecimal(6, epargne.getTauxInteret());
-        }
     }
 
     private Compte lire(ResultSet resultat) throws SQLException {

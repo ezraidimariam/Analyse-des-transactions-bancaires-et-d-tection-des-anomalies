@@ -3,7 +3,9 @@ package service;
 import dao.ClientDAO;
 import dao.CompteDAO;
 import dao.TransactionDAO;
-import entity.*;
+import entity.Compte;
+import entity.Transaction;
+import entity.TypeTransaction;
 import util.DatabaseConnection;
 import util.Validation;
 
@@ -13,21 +15,69 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
-import java.util.*;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 public class TransactionService {
     public static final BigDecimal SEUIL_MONTANT = new BigDecimal("10000");
     public static final int MAX_OPERATIONS_PAR_MINUTE = 3;
-    private final CompteDAO comptes = new CompteDAO();
-    private final TransactionDAO transactions = new TransactionDAO();
+    private final CompteDAO compteDAO;
+    private final TransactionDAO transactionDAO;
+
+    public TransactionService() {
+        compteDAO = new CompteDAO();
+        transactionDAO = new TransactionDAO();
+    }
 
     public void versement(long id, BigDecimal montant, String lieu) throws SQLException {
-        enregistrer(id, null, montant, lieu, TypeTransaction.VERSEMENT);
+        Validation.id(id);
+        Validation.positif(montant);
+        lieu = Validation.texte(lieu, "Lieu", 120);
+
+        try (Connection connection = DatabaseConnection.getConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                Compte compte = compteDAO.verrouiller(connection, id);
+                BigDecimal nouveauSolde = compte.getSolde().add(montant);
+                CompteService.verifierSolde(compte, nouveauSolde);
+                compteDAO.mettreAJourSolde(connection, id, nouveauSolde);
+                Transaction transaction = new Transaction(null, LocalDateTime.now(), montant,
+                        TypeTransaction.VERSEMENT, lieu, id);
+                transactionDAO.ajouter(connection, transaction);
+                connection.commit();
+            } catch (SQLException | RuntimeException exception) {
+                connection.rollback();
+                throw exception;
+            }
+        }
     }
 
     public void retrait(long id, BigDecimal montant, String lieu) throws SQLException {
-        enregistrer(id, null, montant, lieu, TypeTransaction.RETRAIT);
+        Validation.id(id);
+        Validation.positif(montant);
+        lieu = Validation.texte(lieu, "Lieu", 120);
+
+        try (Connection connection = DatabaseConnection.getConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                Compte compte = compteDAO.verrouiller(connection, id);
+                BigDecimal nouveauSolde = compte.getSolde().subtract(montant);
+                CompteService.verifierSolde(compte, nouveauSolde);
+                compteDAO.mettreAJourSolde(connection, id, nouveauSolde);
+                Transaction transaction = new Transaction(null, LocalDateTime.now(), montant,
+                        TypeTransaction.RETRAIT, lieu, id);
+                transactionDAO.ajouter(connection, transaction);
+                connection.commit();
+            } catch (SQLException | RuntimeException exception) {
+                connection.rollback();
+                throw exception;
+            }
+        }
     }
 
     public void virement(long source, long destination, BigDecimal montant, String lieu)
@@ -37,49 +87,36 @@ public class TransactionService {
         if (source == destination) {
             throw new IllegalArgumentException("Choisissez deux comptes differents.");
         }
-        enregistrer(source, destination, montant, lieu, TypeTransaction.VIREMENT);
-    }
-
-    private void enregistrer(long id, Long destination, BigDecimal montant, String lieu,
-            TypeTransaction type)
-            throws SQLException {
-        Validation.id(id);
+        Validation.id(source);
         Validation.positif(montant);
         lieu = Validation.texte(lieu, "Lieu", 120);
 
         try (Connection connection = DatabaseConnection.getConnection()) {
             connection.setAutoCommit(false);
             try {
-                Compte source;
-                Compte cible = null;
+                Compte compteSource;
+                Compte compteDestination;
                 // Meme ordre de verrouillage pour deux virements en sens inverse.
 
-                if (destination != null && destination < id) {
-                    cible = comptes.verrouiller(connection, destination);
-                    source = comptes.verrouiller(connection, id);
+                if (destination < source) {
+                    compteDestination = compteDAO.verrouiller(connection, destination);
+                    compteSource = compteDAO.verrouiller(connection, source);
                 } else {
-                    source = comptes.verrouiller(connection, id);
-
-                    if (destination != null) {
-                        cible = comptes.verrouiller(connection, destination);
-                    }
+                    compteSource = compteDAO.verrouiller(connection, source);
+                    compteDestination = compteDAO.verrouiller(connection, destination);
                 }
-                BigDecimal solde = type == TypeTransaction.VERSEMENT
-                        ? source.getSolde().add(montant)
-                        : source.getSolde().subtract(montant);
-                CompteService.verifierSolde(source, solde);
-                comptes.mettreAJourSolde(connection, id, solde);
+                BigDecimal soldeSource = compteSource.getSolde().subtract(montant);
+                CompteService.verifierSolde(compteSource, soldeSource);
+                BigDecimal soldeDestination = compteDestination.getSolde().add(montant);
+                CompteService.verifierSolde(compteDestination, soldeDestination);
+
+                compteDAO.mettreAJourSolde(connection, source, soldeSource);
+                compteDAO.mettreAJourSolde(connection, destination, soldeDestination);
                 LocalDateTime date = LocalDateTime.now();
-                transactions.ajouter(connection,
-                        new Transaction(null, date, montant, type, lieu, id));
-
-                if (cible != null) {
-                    BigDecimal soldeCible = cible.getSolde().add(montant);
-                    CompteService.verifierSolde(cible, soldeCible);
-                    comptes.mettreAJourSolde(connection, destination, soldeCible);
-                    transactions.ajouter(connection,
-                            new Transaction(null, date, montant, type, lieu, destination));
-                }
+                transactionDAO.ajouter(connection,
+                        new Transaction(null, date, montant, TypeTransaction.VIREMENT, lieu, source));
+                transactionDAO.ajouter(connection,
+                        new Transaction(null, date, montant, TypeTransaction.VIREMENT, lieu, destination));
                 connection.commit();
             } catch (SQLException | RuntimeException exception) {
                 connection.rollback();
@@ -89,22 +126,22 @@ public class TransactionService {
     }
 
     public List<Transaction> parCompte(long id) throws SQLException {
-        comptes.rechercherParId(id)
+        compteDAO.rechercherParId(id)
                 .orElseThrow(() -> new IllegalArgumentException("Compte introuvable."));
 
-        return trierParDate(transactions.rechercherParCompte(id));
+        return trierParDate(transactionDAO.rechercherParCompte(id));
     }
 
     public List<Transaction> parClient(long id) throws SQLException {
         new ClientDAO().rechercherParId(id)
                 .orElseThrow(() -> new IllegalArgumentException("Client introuvable."));
-        List<Long> ids = comptes.rechercherParClient(id).stream().map(Compte::getId).toList();
+        List<Long> ids = compteDAO.rechercherParClient(id).stream().map(Compte::getId).toList();
 
-        return trierParDate(lister().stream().filter(t -> ids.contains(t.idCompte())).toList());
+        return trierParDate(lister().stream().filter(transaction -> ids.contains(transaction.idCompte())).toList());
     }
 
     public List<Transaction> lister() throws SQLException {
-        return transactions.findAll();
+        return transactionDAO.findAll();
     }
 
     public List<Transaction> trierParDate(List<Transaction> liste) {
@@ -114,31 +151,56 @@ public class TransactionService {
     public List<Transaction> filtrer(List<Transaction> liste, BigDecimal minimum,
             BigDecimal maximum,
             TypeTransaction type, LocalDateTime debut, LocalDateTime fin, String lieu) {
-        if (minimum != null) {
-            Validation.nonNegatif(minimum);
-        }
-
-        if (maximum != null) {
-            Validation.nonNegatif(maximum);
-        }
-
         if (minimum != null && maximum != null && minimum.compareTo(maximum) > 0) {
             throw new IllegalArgumentException("Minimum superieur au maximum.");
         }
 
+        if (minimum != null) {
+            liste = filtrerParMontantMinimum(liste, minimum);
+        }
+        if (maximum != null) {
+            liste = filtrerParMontantMaximum(liste, maximum);
+        }
+        if (type != null) {
+            liste = filtrerParType(liste, type);
+        }
+        liste = filtrerParPeriode(liste, debut, fin);
+        if (lieu != null && !lieu.isBlank()) {
+            liste = filtrerParLieu(liste, lieu);
+        }
+        return trierParDate(liste);
+    }
+
+    private List<Transaction> filtrerParMontantMinimum(List<Transaction> liste, BigDecimal minimum) {
+        Validation.nonNegatif(minimum);
+        return liste.stream().filter(transaction -> transaction.montant().compareTo(minimum) >= 0).toList();
+    }
+
+    private List<Transaction> filtrerParMontantMaximum(List<Transaction> liste, BigDecimal maximum) {
+        Validation.nonNegatif(maximum);
+        return liste.stream().filter(transaction -> transaction.montant().compareTo(maximum) <= 0).toList();
+    }
+
+    private List<Transaction> filtrerParType(List<Transaction> liste, TypeTransaction type) {
+        return liste.stream().filter(transaction -> transaction.type() == type).toList();
+    }
+
+    private List<Transaction> filtrerParPeriode(List<Transaction> liste, LocalDateTime debut,
+            LocalDateTime fin) {
         if (debut != null && fin != null && debut.isAfter(fin)) {
             throw new IllegalArgumentException("Periode invalide.");
         }
+        if (debut != null) {
+            liste = liste.stream().filter(transaction -> !transaction.date().isBefore(debut)).toList();
+        }
+        if (fin != null) {
+            liste = liste.stream().filter(transaction -> !transaction.date().isAfter(fin)).toList();
+        }
+        return liste;
+    }
 
-        return liste.stream()
-                .filter(t -> minimum == null || t.montant().compareTo(minimum) >= 0)
-                .filter(t -> maximum == null || t.montant().compareTo(maximum) <= 0)
-                .filter(t -> type == null || t.type() == type)
-                .filter(t -> debut == null || !t.date().isBefore(debut))
-                .filter(t -> fin == null || !t.date().isAfter(fin))
-                .filter(t -> lieu == null || lieu.isBlank()
-                        || t.lieu().equalsIgnoreCase(lieu.trim()))
-                .sorted(Comparator.comparing(Transaction::date)).toList();
+    private List<Transaction> filtrerParLieu(List<Transaction> liste, String lieu) {
+        return liste.stream().filter(transaction -> transaction.lieu().equalsIgnoreCase(lieu.trim())).toList();
     }
 
     public Map<TypeTransaction, List<Transaction>> regrouperParType(List<Transaction> liste) {
@@ -146,7 +208,7 @@ public class TransactionService {
     }
 
     public Map<YearMonth, List<Transaction>> regrouperParMois(List<Transaction> liste) {
-        return liste.stream().collect(Collectors.groupingBy(t -> YearMonth.from(t.date()),
+        return liste.stream().collect(Collectors.groupingBy(transaction -> YearMonth.from(transaction.date()),
                 TreeMap::new, Collectors.toList()));
     }
 
@@ -155,8 +217,11 @@ public class TransactionService {
     }
 
     public BigDecimal moyenne(List<Transaction> liste) {
-        return liste.isEmpty() ? BigDecimal.ZERO
-                : total(liste).divide(BigDecimal.valueOf(liste.size()), 2, RoundingMode.HALF_UP);
+        if (liste.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal total = total(liste);
+        return total.divide(BigDecimal.valueOf(liste.size()), 2, RoundingMode.HALF_UP);
     }
 
     public BigDecimal totalCompte(long id) throws SQLException {
@@ -169,27 +234,40 @@ public class TransactionService {
 
     public List<Transaction> suspectes(List<Transaction> liste, String paysHabituel) {
         String pays = Validation.texte(paysHabituel, "Pays habituel", 120);
-        Set<Transaction> frequentes = new HashSet<>();
-        Map<Long, List<Transaction>> groupes = liste.stream()
-                .collect(Collectors.groupingBy(Transaction::idCompte));
-        for (List<Transaction> groupe : groupes.values()) {
-            List<Transaction> triees = trierParDate(groupe);
-            for (int debut = 0; debut < triees.size(); debut++) {
-                LocalDateTime limite = triees.get(debut).date().plusMinutes(1);
-                int fin = debut;
-                // Une fenetre de 60 secondes inclut exactement sa borne de fin.
-                while (fin < triees.size() && !triees.get(fin).date().isAfter(limite)) {
-                    fin++;
-                }
+        Set<Transaction> frequentes = detecterFrequenceExcessive(liste);
 
-                if (fin - debut > MAX_OPERATIONS_PAR_MINUTE) {
-                    frequentes.addAll(triees.subList(debut, fin));
-                }
+        return liste.stream()
+                .filter(transaction -> estSuspecte(transaction, pays, frequentes))
+                .sorted(Comparator.comparing(Transaction::date)).toList();
+    }
+
+    private boolean estSuspecte(Transaction transaction, String pays, Set<Transaction> frequentes) {
+        if (transaction.montant().compareTo(SEUIL_MONTANT) > 0) {
+            return true;
+        }
+        if (!transaction.lieu().equalsIgnoreCase(pays)) {
+            return true;
+        }
+        if (frequentes.contains(transaction)) {
+            return true;
+        }
+        return false;
+    }
+
+    private Set<Transaction> detecterFrequenceExcessive(List<Transaction> liste) {
+        Set<Transaction> frequentes = new HashSet<>();
+        for (Transaction transaction : liste) {
+            LocalDateTime debut = transaction.date();
+            LocalDateTime fin = debut.plusMinutes(1);
+            List<Transaction> operations = liste.stream()
+                    .filter(operation -> operation.idCompte().equals(transaction.idCompte()))
+                    .filter(operation -> !operation.date().isBefore(debut) && !operation.date().isAfter(fin))
+                    .toList();
+
+            if (operations.size() > MAX_OPERATIONS_PAR_MINUTE) {
+                frequentes.addAll(operations);
             }
         }
-
-        return liste.stream().filter(t -> t.montant().compareTo(SEUIL_MONTANT) > 0
-                || !t.lieu().equalsIgnoreCase(pays) || frequentes.contains(t))
-                .sorted(Comparator.comparing(Transaction::date)).toList();
+        return frequentes;
     }
 }

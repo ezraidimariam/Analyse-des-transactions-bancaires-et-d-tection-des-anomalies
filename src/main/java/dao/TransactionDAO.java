@@ -18,27 +18,44 @@ public class TransactionDAO {
 
     // Cette surcharge partage la transaction SQL avec la mise a jour des soldes.
     public Transaction ajouter(Connection connection, Transaction transaction) throws SQLException {
-        String sql = "INSERT INTO transaction_bancaire(date, montant, type, lieu, id_compte) VALUES (?, ?, ?, ?, ?) RETURNING id";
+        String sql = """
+                INSERT INTO transaction_bancaire(date, montant, type, lieu, id_compte)
+                VALUES (?, ?, ?, ?, ?)
+                RETURNING id
+                """;
 
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
-            remplir(statement, transaction);
+            statement.setTimestamp(1, Timestamp.valueOf(transaction.date()));
+            statement.setBigDecimal(2, transaction.montant());
+            statement.setString(3, transaction.type().name());
+            statement.setString(4, transaction.lieu());
+            statement.setLong(5, transaction.idCompte());
 
             try (ResultSet resultat = statement.executeQuery()) {
-                resultat.next();
-
-                return new Transaction(resultat.getLong("id"), transaction.date(),
-                        transaction.montant(),
-                        transaction.type(), transaction.lieu(), transaction.idCompte());
+                if (resultat.next()) {
+                    long id = resultat.getLong("id");
+                    return new Transaction(id, transaction.date(), transaction.montant(),
+                            transaction.type(), transaction.lieu(), transaction.idCompte());
+                }
             }
         }
+        throw new SQLException("Impossible de creer la transaction.");
     }
 
     public void modifier(Transaction transaction) throws SQLException {
-        String sql = "UPDATE transaction_bancaire SET date=?, montant=?, type=?, lieu=?, id_compte=? WHERE id=?";
+        String sql = """
+                UPDATE transaction_bancaire
+                SET date=?, montant=?, type=?, lieu=?, id_compte=?
+                WHERE id=?
+                """;
 
         try (Connection connection = DatabaseConnection.getConnection();
                 PreparedStatement statement = connection.prepareStatement(sql)) {
-            remplir(statement, transaction);
+            statement.setTimestamp(1, Timestamp.valueOf(transaction.date()));
+            statement.setBigDecimal(2, transaction.montant());
+            statement.setString(3, transaction.type().name());
+            statement.setString(4, transaction.lieu());
+            statement.setLong(5, transaction.idCompte());
             statement.setLong(6, transaction.id());
 
             if (statement.executeUpdate() == 0) {
@@ -48,9 +65,13 @@ public class TransactionDAO {
     }
 
     public void supprimer(long id) throws SQLException {
+        String sql = """
+                DELETE FROM transaction_bancaire
+                WHERE id=?
+                """;
+
         try (Connection connection = DatabaseConnection.getConnection();
-                PreparedStatement statement = connection
-                        .prepareStatement("DELETE FROM transaction_bancaire WHERE id=?")) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, id);
 
             if (statement.executeUpdate() == 0) {
@@ -60,23 +81,37 @@ public class TransactionDAO {
     }
 
     public Optional<Transaction> rechercherParId(long id) throws SQLException {
+        String sql = """
+                SELECT *
+                FROM transaction_bancaire
+                WHERE id=?
+                """;
+
         try (Connection connection = DatabaseConnection.getConnection();
-                PreparedStatement statement = connection
-                        .prepareStatement("SELECT * FROM transaction_bancaire WHERE id=?")) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, id);
 
             try (ResultSet resultat = statement.executeQuery()) {
-                return resultat.next() ? Optional.of(lire(resultat)) : Optional.empty();
+                if (resultat.next()) {
+                    return Optional.of(lire(resultat));
+                }
+                return Optional.empty();
             }
         }
     }
 
     public List<Transaction> rechercherParCompte(long idCompte) throws SQLException {
+        String sql = """
+                SELECT *
+                FROM transaction_bancaire
+                WHERE id_compte=?
+                ORDER BY date, id
+                """;
+
         List<Transaction> transactions = new ArrayList<>();
 
         try (Connection connection = DatabaseConnection.getConnection();
-                PreparedStatement statement = connection.prepareStatement(
-                        "SELECT * FROM transaction_bancaire WHERE id_compte=? ORDER BY date, id")) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, idCompte);
 
             try (ResultSet resultat = statement.executeQuery()) {
@@ -90,11 +125,16 @@ public class TransactionDAO {
     }
 
     public List<Transaction> findAll() throws SQLException {
+        String sql = """
+                SELECT *
+                FROM transaction_bancaire
+                ORDER BY date, id
+                """;
+
         List<Transaction> transactions = new ArrayList<>();
 
         try (Connection connection = DatabaseConnection.getConnection();
-                PreparedStatement statement = connection
-                        .prepareStatement("SELECT * FROM transaction_bancaire ORDER BY date, id");
+                PreparedStatement statement = connection.prepareStatement(sql);
                 ResultSet resultat = statement.executeQuery()) {
             while (resultat.next()) {
                 transactions.add(lire(resultat));
@@ -102,14 +142,6 @@ public class TransactionDAO {
         }
 
         return transactions;
-    }
-
-    private void remplir(PreparedStatement statement, Transaction transaction) throws SQLException {
-        statement.setTimestamp(1, Timestamp.valueOf(transaction.date()));
-        statement.setBigDecimal(2, transaction.montant());
-        statement.setString(3, transaction.type().name());
-        statement.setString(4, transaction.lieu());
-        statement.setLong(5, transaction.idCompte());
     }
 
     private Transaction lire(ResultSet resultat) throws SQLException {

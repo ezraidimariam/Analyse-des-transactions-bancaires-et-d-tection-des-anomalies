@@ -2,7 +2,9 @@ package service;
 
 import dao.ClientDAO;
 import dao.CompteDAO;
-import entity.*;
+import entity.Compte;
+import entity.CompteCourant;
+import entity.CompteEpargne;
 import util.DatabaseConnection;
 import util.Validation;
 
@@ -14,15 +16,21 @@ import java.util.List;
 import java.util.Optional;
 
 public class CompteService {
-    private final CompteDAO comptes = new CompteDAO();
-    private final ClientDAO clients = new ClientDAO();
+    private final CompteDAO compteDAO;
+    private final ClientDAO clientDAO;
+
+    public CompteService() {
+        clientDAO = new ClientDAO();
+        compteDAO = new CompteDAO();
+    }
 
     public Compte creerCourant(String numero, BigDecimal solde, long idClient, BigDecimal decouvert)
             throws SQLException {
         numero = validerCreation(numero, solde, idClient);
         Validation.nonNegatif(decouvert);
 
-        return comptes.ajouter(new CompteCourant(null, numero, solde, idClient, decouvert));
+        CompteCourant compte = new CompteCourant(null, numero, solde, idClient, decouvert);
+        return compteDAO.ajouter(compte);
     }
 
     public Compte creerEpargne(String numero, BigDecimal solde, long idClient, BigDecimal taux)
@@ -30,13 +38,14 @@ public class CompteService {
         numero = validerCreation(numero, solde, idClient);
         validerTaux(taux);
 
-        return comptes.ajouter(new CompteEpargne(null, numero, solde, idClient, taux));
+        CompteEpargne compte = new CompteEpargne(null, numero, solde, idClient, taux);
+        return compteDAO.ajouter(compte);
     }
 
     private String validerCreation(String numero, BigDecimal solde, long idClient)
             throws SQLException {
         Validation.id(idClient);
-        clients.rechercherParId(idClient)
+        clientDAO.rechercherParId(idClient)
                 .orElseThrow(() -> new IllegalArgumentException("Client introuvable."));
         Validation.nonNegatif(solde);
 
@@ -51,38 +60,53 @@ public class CompteService {
         try (Connection connection = DatabaseConnection.getConnection()) {
             connection.setAutoCommit(false);
             try {
-                Compte ancien = comptes.verrouiller(connection, id);
-                BigDecimal nouveauSolde = solde == null ? ancien.getSolde() : solde;
+                Compte ancien = compteDAO.verrouiller(connection, id);
+                if (solde == null) {
+                    solde = ancien.getSolde();
+                }
                 Compte nouveau;
 
                 if (ancien instanceof CompteCourant courant) {
                     if (taux != null) {
                         throw new IllegalArgumentException("Un compte courant n'a pas de taux.");
                     }
-                    BigDecimal nouveauDecouvert = decouvert == null ? courant.getDecouvertAutorise()
-                            : decouvert;
-                    Validation.nonNegatif(nouveauDecouvert);
-                    nouveau = new CompteCourant(id, ancien.getNumero(), nouveauSolde,
-                            ancien.getIdClient(), nouveauDecouvert);
+                    nouveau = preparerCourant(courant, solde, decouvert);
                 } else {
                     if (decouvert != null) {
                         throw new IllegalArgumentException(
                                 "Un compte epargne n'a pas de decouvert.");
                     }
                     CompteEpargne epargne = (CompteEpargne) ancien;
-                    BigDecimal nouveauTaux = taux == null ? epargne.getTauxInteret() : taux;
-                    validerTaux(nouveauTaux);
-                    nouveau = new CompteEpargne(id, ancien.getNumero(), nouveauSolde,
-                            ancien.getIdClient(), nouveauTaux);
+                    nouveau = preparerEpargne(epargne, solde, taux);
                 }
-                verifierSolde(nouveau, nouveauSolde);
-                comptes.modifier(connection, nouveau);
+                verifierSolde(nouveau, solde);
+                compteDAO.modifier(connection, nouveau);
                 connection.commit();
             } catch (SQLException | RuntimeException exception) {
                 connection.rollback();
                 throw exception;
             }
         }
+    }
+
+    private CompteCourant preparerCourant(CompteCourant compte, BigDecimal solde,
+            BigDecimal decouvert) {
+        if (decouvert == null) {
+            decouvert = compte.getDecouvertAutorise();
+        }
+        Validation.nonNegatif(decouvert);
+        return new CompteCourant(compte.getId(), compte.getNumero(), solde,
+                compte.getIdClient(), decouvert);
+    }
+
+    private CompteEpargne preparerEpargne(CompteEpargne compte, BigDecimal solde,
+            BigDecimal taux) {
+        if (taux == null) {
+            taux = compte.getTauxInteret();
+        }
+        validerTaux(taux);
+        return new CompteEpargne(compte.getId(), compte.getNumero(), solde,
+                compte.getIdClient(), taux);
     }
 
     public void mettreAJourSolde(long id, BigDecimal solde) throws SQLException {
@@ -124,22 +148,23 @@ public class CompteService {
     public Optional<Compte> rechercherParId(long id) throws SQLException {
         Validation.id(id);
 
-        return comptes.rechercherParId(id);
+        return compteDAO.rechercherParId(id);
     }
 
     public Optional<Compte> rechercherParNumero(String numero) throws SQLException {
-        return comptes.rechercherParNumero(Validation.texte(numero, "Numero", 30));
+        numero = Validation.texte(numero, "Numero", 30);
+        return compteDAO.rechercherParNumero(numero);
     }
 
     public List<Compte> rechercherParClient(long id) throws SQLException {
-        clients.rechercherParId(id)
+        clientDAO.rechercherParId(id)
                 .orElseThrow(() -> new IllegalArgumentException("Client introuvable."));
 
-        return comptes.rechercherParClient(id);
+        return compteDAO.rechercherParClient(id);
     }
 
     public List<Compte> lister() throws SQLException {
-        return comptes.findAll();
+        return compteDAO.findAll();
     }
 
     public Optional<Compte> maximum() throws SQLException {
@@ -152,6 +177,6 @@ public class CompteService {
 
     public void supprimer(long id) throws SQLException {
         Validation.id(id);
-        comptes.supprimer(id);
+        compteDAO.supprimer(id);
     }
 }

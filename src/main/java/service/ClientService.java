@@ -12,16 +12,25 @@ import java.util.List;
 import java.util.Optional;
 
 public class ClientService {
-    private final ClientDAO clients = new ClientDAO();
-    private final CompteDAO comptes = new CompteDAO();
+    private final ClientDAO clientDAO;
+    private final CompteDAO compteDAO;
+
+    public ClientService() {
+        clientDAO = new ClientDAO();
+        compteDAO = new CompteDAO();
+    }
 
     public Client ajouter(String nom, String email) throws SQLException {
-        return clients.ajouter(valider(new Client(null, nom, email)));
+        Client client = new Client(null, nom, email);
+        client = valider(client);
+        return clientDAO.ajouter(client);
     }
 
     public void modifier(long id, String nom, String email) throws SQLException {
         Validation.id(id);
-        clients.modifier(valider(new Client(id, nom, email)));
+        Client client = new Client(id, nom, email);
+        client = valider(client);
+        clientDAO.modifier(client);
     }
 
     private Client valider(Client client) {
@@ -37,34 +46,40 @@ public class ClientService {
 
     public void supprimer(long id) throws SQLException {
         Validation.id(id);
-        clients.supprimer(id);
+        clientDAO.supprimer(id);
     }
 
     public Optional<Client> rechercherParId(long id) throws SQLException {
         Validation.id(id);
 
-        return clients.rechercherParId(id);
+        return clientDAO.rechercherParId(id);
     }
 
     public List<Client> rechercherParNom(String nom) throws SQLException {
-        return clients.rechercherParNom(Validation.texte(nom, "Nom", 120));
+        nom = Validation.texte(nom, "Nom", 120);
+        return clientDAO.rechercherParNom(nom);
     }
 
     public List<Client> lister() throws SQLException {
-        return clients.findAll();
+        return clientDAO.findAll();
     }
 
     public int nombreComptes(long idClient) throws SQLException {
         verifierClient(idClient);
 
-        return comptes.rechercherParClient(idClient).size();
+        List<Compte> listeComptes = compteDAO.rechercherParClient(idClient);
+        return listeComptes.size();
     }
 
     public BigDecimal soldeTotal(long idClient) throws SQLException {
         verifierClient(idClient);
 
-        return comptes.rechercherParClient(idClient).stream()
-                .map(Compte::getSolde).reduce(BigDecimal.ZERO, BigDecimal::add);
+        List<Compte> listeComptes = compteDAO.rechercherParClient(idClient);
+        BigDecimal total = BigDecimal.ZERO;
+        for (Compte compte : listeComptes) {
+            total = total.add(compte.getSolde());
+        }
+        return total;
     }
 
     private void verifierClient(long id) throws SQLException {

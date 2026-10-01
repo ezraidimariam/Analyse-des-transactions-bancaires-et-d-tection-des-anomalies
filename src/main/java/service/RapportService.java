@@ -3,37 +3,62 @@ package service;
 import dao.ClientDAO;
 import dao.CompteDAO;
 import dao.TransactionDAO;
-import entity.*;
+import entity.Client;
+import entity.Compte;
+import entity.Transaction;
+import entity.TypeTransaction;
 import util.Validation;
 
 import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
-import java.util.*;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 public class RapportService {
-    private final ClientDAO clients = new ClientDAO();
-    private final CompteDAO comptes = new CompteDAO();
-    private final TransactionDAO transactions = new TransactionDAO();
-    private final TransactionService analyses = new TransactionService();
+    private final ClientDAO clientDAO;
+    private final CompteDAO compteDAO;
+    private final TransactionDAO transactionDAO;
+    private final TransactionService transactionService;
 
-    // LinkedHashMap garde l'ordre du classement, sans ajouter de classe DTO.
+    public RapportService() {
+        clientDAO = new ClientDAO();
+        compteDAO = new CompteDAO();
+        transactionDAO = new TransactionDAO();
+        transactionService = new TransactionService();
+    }
+
+    // LinkedHashMap garde l'ordre du classement.
     public Map<Client, BigDecimal> top5() throws SQLException {
-        List<Compte> listeComptes = comptes.findAll();
+        List<Compte> listeComptes = compteDAO.findAll();
         Map<Client, BigDecimal> soldes = new LinkedHashMap<>();
-        for (Client client : clients.findAll()) {
-            BigDecimal total = listeComptes.stream()
-                    .filter(c -> c.getIdClient().equals(client.id()))
-                    .map(Compte::getSolde).reduce(BigDecimal.ZERO, BigDecimal::add);
+        for (Client client : clientDAO.findAll()) {
+            BigDecimal total = calculerSoldeClient(client, listeComptes);
             soldes.put(client, total);
         }
 
-        return soldes.entrySet().stream()
+        List<Map.Entry<Client, BigDecimal>> classement = soldes.entrySet().stream()
                 .sorted(Map.Entry.<Client, BigDecimal>comparingByValue().reversed())
-                .limit(5).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue,
-                        (premier, second) -> premier, LinkedHashMap::new));
+                .limit(5).toList();
+
+        Map<Client, BigDecimal> resultat = new LinkedHashMap<>();
+        for (Map.Entry<Client, BigDecimal> ligne : classement) {
+            resultat.put(ligne.getKey(), ligne.getValue());
+        }
+        return resultat;
+    }
+
+    private BigDecimal calculerSoldeClient(Client client, List<Compte> comptes) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (Compte compte : comptes) {
+            if (compte.getIdClient().equals(client.id())) {
+                total = total.add(compte.getSolde());
+            }
+        }
+        return total;
     }
 
     public Map<TypeTransaction, Long> nombreParType(List<Transaction> liste) {
@@ -42,16 +67,18 @@ public class RapportService {
     }
 
     public BigDecimal volumeTotal(List<Transaction> liste) {
-        return analyses.total(liste);
+        return transactionService.total(liste);
     }
 
     public List<Transaction> rapportMensuel(YearMonth mois) throws SQLException {
-        return transactions.findAll().stream()
-                .filter(t -> YearMonth.from(t.date()).equals(mois)).toList();
+        List<Transaction> liste = transactionDAO.findAll();
+        return liste.stream()
+                .filter(transaction -> YearMonth.from(transaction.date()).equals(mois)).toList();
     }
 
     public List<Transaction> transactionsSuspectes(String pays) throws SQLException {
-        return analyses.suspectes(transactions.findAll(), pays);
+        List<Transaction> liste = transactionDAO.findAll();
+        return transactionService.suspectes(liste, pays);
     }
 
     public List<Compte> comptesInactifs(int jours) throws SQLException {
@@ -59,21 +86,27 @@ public class RapportService {
             throw new IllegalArgumentException("Nombre de jours strictement positif requis.");
         }
         LocalDateTime limite = LocalDateTime.now().minusDays(jours);
-        List<Transaction> liste = transactions.findAll();
+        List<Transaction> liste = transactionDAO.findAll();
 
-        return comptes.findAll().stream().filter(compte -> {
-            Optional<LocalDateTime> derniereDate = liste.stream()
-                    .filter(t -> t.idCompte().equals(compte.getId()))
-                    .map(Transaction::date).max(Comparator.naturalOrder());
-            // Sans transaction, le compte est considere inactif.
+        return compteDAO.findAll().stream()
+                .filter(compte -> estInactif(compte, liste, limite)).toList();
+    }
 
-            return derniereDate.map(date -> date.isBefore(limite)).orElse(true);
-        }).toList();
+    private boolean estInactif(Compte compte, List<Transaction> liste, LocalDateTime limite) {
+        for (Transaction transaction : liste) {
+            if (transaction.idCompte().equals(compte.getId())) {
+                if (!transaction.date().isBefore(limite)) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     public List<Compte> soldesBas(BigDecimal seuil) throws SQLException {
         Validation.nonNegatif(seuil);
 
-        return comptes.findAll().stream().filter(c -> c.getSolde().compareTo(seuil) < 0).toList();
+        List<Compte> liste = compteDAO.findAll();
+        return liste.stream().filter(compte -> compte.getSolde().compareTo(seuil) < 0).toList();
     }
 }
