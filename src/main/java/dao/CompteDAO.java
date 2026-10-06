@@ -136,7 +136,6 @@ public class CompteDAO {
         }
     }
 
-    // Le verrou reste actif jusqu'au commit ou rollback de la connexion.
     public Compte verrouiller(Connection connection, long id) throws SQLException {
         String sql = """
                 SELECT *

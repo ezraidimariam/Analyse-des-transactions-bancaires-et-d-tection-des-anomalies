@@ -105,7 +105,6 @@ class BanqueIntegrationTest {
                 () -> transactions.retrait(source.getId(), new BigDecimal("81"), "Maroc"));
         assertThrows(IllegalArgumentException.class, () -> transactions.virement(source.getId(),
                 source.getId(), BigDecimal.ONE, "Maroc"));
-        // L'echec du credit survient apres l'ecriture du debit : tout doit etre annule.
         comptes.mettreAJourSolde(cible.getId(), new BigDecimal("9999999999999.99"));
         assertThrows(IllegalArgumentException.class, () -> transactions.virement(source.getId(),
                 cible.getId(), BigDecimal.ONE, "Maroc"));
@@ -163,7 +162,6 @@ class BanqueIntegrationTest {
         assertTrue(rapports.volumeTotal(mois).compareTo(new BigDecimal("10001")) >= 0);
         assertTrue(rapports.transactionsSuspectes("Maroc").stream()
                 .anyMatch(t -> t.idCompte().equals(actif.getId())));
-        // Comparer le top 5 a tous les soldes reels, meme si la base contient deja des clients.
         List<BigDecimal> attendus = new ArrayList<>();
         for (Client c : clients.lister()) {
             attendus.add(clients.soldeTotal(c.id()));
@@ -176,8 +174,8 @@ class BanqueIntegrationTest {
     @Test
     void menuEnregistreUneOperationEtContinueApresErreur() throws Exception {
         Compte compte = courant(client(), "100");
-        String saisie = String.join("\n", "3", "1", compte.getId().toString(), "20", "Maroc",
-                "3", "2", compte.getId().toString(), "999", "Maroc", "0") + "\n";
+        String saisie = String.join("\n", "3", "1", compte.getId().toString(), "20", "Maroc", "",
+                "3", "2", compte.getId().toString(), "999", "Maroc", "", "0") + "\n";
         var entree = System.in;
         var sortie = System.out;
         var capture = new java.io.ByteArrayOutputStream();

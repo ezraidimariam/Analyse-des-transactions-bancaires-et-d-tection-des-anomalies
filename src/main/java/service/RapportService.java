@@ -31,7 +31,6 @@ public class RapportService {
         transactionService = new TransactionService();
     }
 
-    // LinkedHashMap garde l'ordre du classement.
     public Map<Client, BigDecimal> top5() throws SQLException {
         List<Compte> listeComptes = compteDAO.findAll();
         Map<Client, BigDecimal> soldes = new LinkedHashMap<>();

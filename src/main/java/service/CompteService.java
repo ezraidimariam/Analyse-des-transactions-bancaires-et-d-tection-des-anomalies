@@ -52,7 +52,6 @@ public class CompteService {
         return Validation.texte(numero, "Numero", 30);
     }
 
-    // Un champ null conserve sa valeur actuelle. La lecture est verrouillee.
     public void modifier(long id, BigDecimal solde, BigDecimal decouvert, BigDecimal taux)
             throws SQLException {
         Validation.id(id);

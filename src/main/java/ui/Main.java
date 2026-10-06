@@ -34,9 +34,20 @@ public class Main {
     public void demarrer() {
         while (true) {
             try {
-                System.out.println("\n=== BANQUE AL BARAKA ===");
-                System.out.println(
-                        "1. Gestion des clients\n2. Gestion des comptes\n3. Gestion des transactions\n4. Analyses et rapports\n0. Quitter");
+                System.out.println("""
+
+                        ========================================
+                                  BANQUE AL BARAKA
+                        ========================================
+
+                          1. Gestion des clients
+                          2. Gestion des comptes
+                          3. Gestion des transactions
+                          4. Analyses et rapports
+
+                          0. Quitter
+                        ----------------------------------------
+                        """);
                 var choix = texte("Choix : ");
                 switch (choix) {
                 case "1" -> menuClients();
@@ -69,6 +80,12 @@ public class Main {
                 };
                 System.out.println(message);
             }
+            System.out.print("\nAppuyez sur Entree pour revenir au menu...");
+            if (!scanner.hasNextLine()) {
+                System.out.println("\nFin de saisie.");
+                return;
+            }
+            scanner.nextLine();
         }
     }
 
